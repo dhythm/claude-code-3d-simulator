@@ -1,0 +1,6 @@
+{
+  "name": "radial-9-simulator",
+  "private": true,
+  "type": "module",
+  "scripts": { "test": "node --test test/*.test.js" }
+}

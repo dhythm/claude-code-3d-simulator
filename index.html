@@ -1,0 +1,234 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>R9 Radial Teardown</title>
+<meta name="description" content="9気筒星型エンジンをクランク角ひとつのモデルから組み立てた、操作できる3Dシミュレーター">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600;800&family=Noto+Sans+JP:wght@400;700&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #ebe8e1;
+    --bg2: #d9d4c9;
+    --ink: #15171a;
+    --ink2: #5b5f66;
+    --line: #c7c1b5;
+    --card: rgba(250, 248, 244, 0.82);
+    --accent: #ff4d17;
+    --blue: #2f6fdf;
+    --mono: 'JetBrains Mono', ui-monospace, monospace;
+    --sans: 'Noto Sans JP', system-ui, sans-serif;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; overflow: hidden; background: var(--bg); color: var(--ink); font-family: var(--sans); }
+  body { background: radial-gradient(120% 90% at 50% 40%, #f6f4ef 0%, var(--bg) 55%, var(--bg2) 100%); }
+  #gl { position: fixed; inset: 0; width: 100%; height: 100%; display: block; cursor: grab; }
+  #gl:active { cursor: grabbing; }
+  .hud { position: fixed; inset: 0; pointer-events: none; transition: opacity .35s; }
+  .hud.hidden { opacity: 0; }
+  .hud.hidden * { pointer-events: none !important; }
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: 6px; backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px); pointer-events: auto; }
+  .lbl { font: 600 10px/1 var(--mono); letter-spacing: .14em; text-transform: uppercase; color: var(--ink2); }
+  .lbl b { color: var(--ink); font-weight: 800; }
+
+  /* 左上: タイトルと主数値 */
+  #title { position: absolute; left: 22px; top: 18px; pointer-events: none; }
+  #title .eyebrow { font: 600 11px/1 var(--mono); letter-spacing: .22em; color: var(--accent); }
+  #title h1 { margin: 6px 0 2px; font: 800 26px/1 var(--mono); letter-spacing: -.01em; }
+  #title .sub { font-size: 12px; color: var(--ink2); }
+  #rpm { display: flex; align-items: baseline; gap: 8px; margin-top: 14px; }
+  #rpm .num { font: 800 76px/0.9 var(--mono); letter-spacing: -.04em; font-variant-numeric: tabular-nums; }
+  #rpm .unit { font: 600 13px/1 var(--mono); color: var(--ink2); }
+  #stats { display: grid; grid-template-columns: repeat(3, auto); gap: 10px 22px; margin-top: 12px; }
+  #stats div { font: 800 17px/1.15 var(--mono); font-variant-numeric: tabular-nums; }
+  #stats div span { display: block; font: 600 9px/1.4 var(--mono); letter-spacing: .14em; color: var(--ink2); }
+
+  /* 左カラム: チャート */
+  #left { position: absolute; left: 22px; top: 300px; bottom: 112px; width: 300px; display: flex; flex-direction: column; gap: 10px; }
+  .chart { padding: 10px 12px 8px; }
+  .chart .head { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 6px; }
+  .chart canvas { width: 100%; display: block; }
+  #pv { height: 150px; } #travel { height: 118px; }
+
+  /* 右カラム */
+  #right { position: absolute; right: 22px; top: 18px; bottom: 112px; width: 268px; display: flex; flex-direction: column; gap: 10px; overflow: auto; scrollbar-width: none; }
+  #right .card { padding: 12px; }
+  .btns { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; margin-top: 8px; }
+  .btns.five { grid-template-columns: repeat(5, 1fr); }
+  .btns.nine { grid-template-columns: repeat(9, 1fr); gap: 4px; }
+  button { font: 600 11px/1 var(--mono); letter-spacing: .06em; color: var(--ink); background: #fff; border: 1px solid var(--line); border-radius: 4px; padding: 9px 6px; cursor: pointer; text-align: left; transition: background .15s, border-color .15s, color .15s; }
+  button small { display: block; margin-top: 4px; font: 400 10px/1 var(--sans); letter-spacing: 0; color: var(--ink2); }
+  button:hover { border-color: var(--ink); }
+  button.on { background: var(--ink); color: #fff; border-color: var(--ink); }
+  button.on small { color: #c9ccd1; }
+  .btns.five button, .btns.nine button { text-align: center; padding: 8px 0; }
+  .btns.nine button.on { background: var(--accent); border-color: var(--accent); }
+  #schem { width: 100%; height: 212px; display: block; margin-top: 6px; }
+  #fireorder { display: grid; grid-template-columns: repeat(9, 1fr); gap: 3px; margin-top: 8px; }
+  #fireorder div { font: 800 11px/1 var(--mono); text-align: center; padding: 6px 0; border-radius: 3px; background: #fff; border: 1px solid var(--line); transition: background .08s; }
+  #fireorder div.fire { background: var(--accent); color: #fff; border-color: var(--accent); }
+  table { width: 100%; border-collapse: collapse; margin-top: 8px; font: 400 10.5px/1.5 var(--mono); font-variant-numeric: tabular-nums; }
+  th { font-weight: 600; color: var(--ink2); text-align: right; }
+  td { text-align: right; }
+  th:first-child, td:first-child { text-align: left; }
+  tr.trk td { color: var(--accent); font-weight: 800; }
+  .note { font-size: 10.5px; line-height: 1.55; color: var(--ink2); margin-top: 8px; }
+  .note code { font-family: var(--mono); color: var(--ink); }
+
+  /* 下: コントロール */
+  #bottom { position: absolute; left: 22px; right: 22px; bottom: 18px; height: 78px; display: flex; gap: 18px; align-items: center; padding: 0 18px; }
+  .ctl { display: flex; flex-direction: column; gap: 8px; }
+  .ctl.grow { flex: 1; }
+  input[type=range] { -webkit-appearance: none; appearance: none; width: 100%; height: 4px; background: linear-gradient(90deg, var(--accent) var(--p, 10%), var(--line) var(--p, 10%)); border-radius: 2px; outline: none; cursor: pointer; }
+  input[type=range]::-webkit-slider-thumb { -webkit-appearance: none; width: 18px; height: 18px; border-radius: 50%; background: var(--ink); border: 3px solid #fff; box-shadow: 0 1px 4px rgba(0,0,0,.3); }
+  input[type=range]::-moz-range-thumb { width: 14px; height: 14px; border-radius: 50%; background: var(--ink); border: 3px solid #fff; }
+  .seg { display: flex; gap: 4px; }
+  .seg button { padding: 8px 10px; text-align: center; }
+  #mode { font: 600 10px/1.4 var(--mono); letter-spacing: .1em; padding: 8px 10px; border-radius: 4px; background: var(--ink); color: #fff; white-space: nowrap; }
+  #mode.auto::before { content: '●'; color: var(--accent); margin-right: 6px; animation: blink 1.2s infinite; }
+  @keyframes blink { 50% { opacity: .2; } }
+  #perf { font: 400 10px/1.4 var(--mono); color: var(--ink2); white-space: nowrap; }
+
+  /* コールアウト */
+  #callouts { position: fixed; inset: 0; pointer-events: none; }
+  #callouts svg { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; }
+  .co { position: absolute; left: 0; top: 0; font: 600 10.5px/1.3 var(--mono); white-space: nowrap; color: var(--ink); background: rgba(255,255,255,.88); border: 1px solid var(--ink); border-radius: 3px; padding: 4px 7px; will-change: transform; }
+  .co em { font-style: normal; color: var(--accent); }
+  .co small { display: block; font: 400 9.5px/1.3 var(--mono); color: var(--ink2); }
+
+  /* ツアー用カーソル */
+  #cursor { position: fixed; left: 0; top: 0; width: 26px; height: 26px; pointer-events: none; z-index: 20; opacity: 0; transition: opacity .3s; filter: drop-shadow(0 2px 3px rgba(0,0,0,.35)); }
+  #cursor.show { opacity: 1; }
+  #cursor .ring { position: absolute; left: -14px; top: -14px; width: 28px; height: 28px; border-radius: 50%; border: 2px solid var(--accent); opacity: 0; }
+  #cursor .ring.go { animation: ring .5s ease-out; }
+  @keyframes ring { from { transform: scale(.3); opacity: 1; } to { transform: scale(1.6); opacity: 0; } }
+
+  #fallback { position: fixed; inset: 0; display: none; place-items: center; text-align: center; padding: 24px; font-size: 14px; }
+  #fallback.show { display: grid; }
+
+  @media (max-width: 1100px) {
+    #left { display: none; }
+    #rpm .num { font-size: 56px; }
+  }
+  @media (max-width: 760px) {
+    #title { left: 16px; top: 14px; }
+    #title h1 { font-size: 19px; }
+    #stats { grid-template-columns: repeat(2, auto); }
+    #right { left: 16px; right: 16px; top: auto; bottom: 110px; width: auto; height: 150px; flex-direction: row; overflow-x: auto; }
+    #right .card { min-width: 240px; }
+    #bottom { left: 16px; right: 16px; height: auto; padding: 10px 12px; flex-wrap: wrap; gap: 10px; }
+    #perf, .ctl.hide-sm { display: none; }
+  }
+</style>
+<script type="importmap">
+{ "imports": {
+  "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+  "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+} }
+</script>
+</head>
+<body>
+<canvas id="gl"></canvas>
+<div id="callouts"><svg id="leaders"></svg></div>
+
+<div class="hud" id="hud">
+  <div id="title">
+    <div class="eyebrow">TEARDOWN / 001</div>
+    <h1>R9 RADIAL — 29.9 L</h1>
+    <div class="sub">9気筒・空冷星型 4サイクル｜マスター＆リンクロッド機構</div>
+    <div id="rpm"><span class="num" id="rpmNum">0600</span><span class="unit">RPM<br>CRANK</span></div>
+    <div id="stats">
+      <div id="sMap">—<span>MAP bar</span></div>
+      <div id="sHp">—<span>図示出力 hp</span></div>
+      <div id="sTq">—<span>トルク N·m</span></div>
+      <div id="sProp">—<span>プロペラ rpm</span></div>
+      <div id="sVp">—<span>平均ピストン速度 m/s</span></div>
+      <div id="sCrank">—<span>クランク角 °</span></div>
+    </div>
+  </div>
+
+  <div id="left">
+    <div class="card chart">
+      <div class="head"><span class="lbl">P–V ループ · <b id="pvCyl">CYL 1</b></span><span class="lbl" id="pvVal">—</span></div>
+      <canvas id="pv"></canvas>
+    </div>
+    <div class="card chart">
+      <div class="head"><span class="lbl">ピストン行程 / バルブリフト · 720°</span><span class="lbl" id="strokeName">—</span></div>
+      <canvas id="travel"></canvas>
+    </div>
+  </div>
+
+  <div id="right">
+    <div class="card">
+      <div class="lbl">サブシステム</div>
+      <div class="btns" id="subsys">
+        <button data-toggle="glass" class="on">GLASS<small>追跡気筒を透明に</small></button>
+        <button data-toggle="cut">CUTAWAY<small>前半分を切断</small></button>
+        <button data-toggle="xray">X-RAY<small>外殻を透過</small></button>
+        <button data-toggle="isolate">ROD SET<small>ロッド機構だけ</small></button>
+        <button data-toggle="explode">EXPLODE<small>分解配置</small></button>
+        <button data-toggle="prop" class="on">PROP<small>プロペラ表示</small></button>
+      </div>
+      <div class="lbl" style="margin-top:12px">追跡する気筒</div>
+      <div class="btns nine" id="cyls"></div>
+      <div class="lbl" style="margin-top:12px">カメラ</div>
+      <div class="btns five" id="views">
+        <button data-view="hero" class="on">HERO</button>
+        <button data-view="front">FRONT</button>
+        <button data-view="side">SIDE</button>
+        <button data-view="top">TOP</button>
+        <button data-view="inside">IN</button>
+      </div>
+    </div>
+    <div class="card">
+      <div class="lbl">機構図 · 同じモデルから2D描画</div>
+      <canvas id="schem"></canvas>
+      <div class="lbl" style="margin-top:6px">点火順序</div>
+      <div id="fireorder"></div>
+    </div>
+    <div class="card">
+      <div class="lbl">モデル検算</div>
+      <table id="check"></table>
+      <div class="note" id="checkNote"></div>
+    </div>
+  </div>
+
+  <div class="card" id="bottom">
+    <div class="ctl grow">
+      <div class="lbl">スロットル · <b id="thrVal">10%</b> → 目標 <b id="tgtVal">790</b> rpm</div>
+      <input type="range" id="throttle" min="0" max="1" step="0.001" value="0.1">
+    </div>
+    <div class="ctl hide-sm">
+      <div class="lbl">再生速度</div>
+      <div class="seg" id="speeds">
+        <button data-speed="0.025">1/40</button>
+        <button data-speed="0.05" class="on">1/20</button>
+        <button data-speed="0.2">1/5</button>
+        <button data-speed="1">1×</button>
+      </div>
+    </div>
+    <div class="ctl">
+      <div class="lbl">&nbsp;</div>
+      <div class="seg">
+        <button id="pause">PAUSE</button>
+        <button id="sound">SOUND</button>
+      </div>
+    </div>
+    <div class="ctl">
+      <div id="mode" class="auto">AUTO TOUR</div>
+      <div id="perf">— fps</div>
+    </div>
+  </div>
+</div>
+
+<div id="cursor">
+  <svg width="26" height="26" viewBox="0 0 26 26"><path d="M3 2 L3 21 L8.5 16 L12 24 L15.5 22.5 L12 15 L19.5 15 Z" fill="#15171a" stroke="#fff" stroke-width="1.6" stroke-linejoin="round"/></svg>
+  <div class="ring"></div>
+</div>
+
+<div id="fallback"><div><b>WebGL を初期化できませんでした。</b><br>ハードウェアアクセラレーションを有効にしたブラウザで開いてください。<br><small id="fallbackMsg"></small></div></div>
+
+<script type="module" src="./src/app.js"></script>
+</body>
+</html>
